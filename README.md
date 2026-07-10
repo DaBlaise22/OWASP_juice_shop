@@ -71,9 +71,6 @@ verifies the password with `bcrypt.compare`.
 
 ## Part 3 — exploiting the vulnerable version
 
-See `EXPLOIT_REPORT.md` for the full walkthrough, payloads, raw server
-logs, and the fix verification.
-
 ## Project structure
 
 ```
