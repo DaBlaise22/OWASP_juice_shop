@@ -1,0 +1,17 @@
+{
+  "name": "juice-shop-secure-login-form",
+  "version": "1.0.0",
+  "description": "Secure login form demo (client + server validation) built for an OWASP Juice Shop security assignment, plus a deliberately vulnerable variant used to demonstrate and then fix a SQL injection.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "vulnerable": "node vulnerable-server.js"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.19.2",
+    "better-sqlite3": "^11.3.0",
+    "bcrypt": "^5.1.1",
+    "express-rate-limit": "^7.4.0"
+  }
+}
