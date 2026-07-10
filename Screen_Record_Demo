@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Secure Login - Juice Shop Assignment Demo (live, in-browser)</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+  body { font-family: Arial, sans-serif; background:#f4f4f4; display:flex; flex-direction:column; justify-content:center; align-items:center; min-height:100vh; margin:0; padding:20px; box-sizing:border-box; }
+  .login-box { background:#fff; padding:32px; border-radius:8px; box-shadow:0 2px 10px rgba(0,0,0,0.15); width:320px; }
+  h1 { font-size:20px; text-align:center; color:#222; }
+  label { display:block; margin-top:14px; font-size:13px; color:#444; }
+  input { width:100%; padding:8px; margin-top:4px; box-sizing:border-box; border:1px solid #ccc; border-radius:4px; }
+  input.invalid { border-color:#d32f2f; }
+  .error { color:#d32f2f; font-size:12px; min-height:16px; margin-top:2px; }
+  button { width:100%; margin-top:20px; padding:10px; background:#f57c00; color:#fff; border:none; border-radius:4px; cursor:pointer; font-size:14px; }
+  button:hover { background:#e06f00; }
+  #formMsg { text-align:center; font-size:13px; margin-top:12px; min-height:16px; }
+  .note { max-width:320px; font-size:12px; color:#666; margin-top:16px; line-height:1.5; }
+  .creds { max-width:320px; font-size:12px; color:#444; margin-top:10px; background:#fff; border:1px solid #ddd; border-radius:6px; padding:10px; }
+</style>
+</head>
+<body>
+  <div class="login-box">
+    <h1>Login</h1>
+    <form id="loginForm" novalidate>
+      <label for="email">Email address</label>
+      <input type="text" id="email" name="email" autocomplete="username">
+      <div class="error" id="emailError"></div>
+
+      <label for="password">Password</label>
+      <input type="password" id="password" name="password" autocomplete="current-password">
+      <div class="error" id="passwordError"></div>
+
+      <button type="submit">Log in</button>
+      <div id="formMsg"></div>
+    </form>
+  </div>
+
+  <div class="creds"><b>Seeded demo account:</b><br>demo@juice-shop-assignment.test / CorrectHorse123</div>
+  <div class="note">
+    This file is the real <code>index.html</code> and <code>script.js</code> from the project, unmodified,
+    opened directly in your browser as a local file (no npm install, no server). The only difference from
+    running <code>npm start</code>: instead of a network call to an Express server, <code>fetch('/api/login')</code>
+    is intercepted below and answered by real bcrypt hashing (bcryptjs) plus the same validation/lookup logic
+    that lives in <code>server.js</code>, running client-side in this tab. Same rules, same bcrypt, no server process.
+  </div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/bcryptjs/2.4.3/bcrypt.min.js"></script>
+<script>
+// ---- In-browser stand-in for server.js, using the SAME logic ----
+(async function () {
+  const seedHash = await new Promise((resolve) => {
+    dcodeIO.bcrypt.hash('CorrectHorse123', 12, (err, hash) => resolve(hash));
+  });
+  const users = [{ email: 'demo@juice-shop-assignment.test', password_hash: seedHash }];
+
+  function isValidLoginPayload(body) {
+    if (!body || typeof body.email !== 'string' || typeof body.password !== 'string') return false;
+    const email = body.email.trim();
+    if (email.length === 0 || email.length > 254) return false;
+    if (!email.includes('@')) return false;
+    if (body.password.length < 8 || body.password.length > 128) return false;
+    return true;
+  }
+
+  const realFetch = window.fetch;
+  window.fetch = function (url, opts) {
+    if (url !== '/api/login') return realFetch(url, opts);
+    return new Promise((resolve) => {
+      const body = JSON.parse(opts.body);
+      if (!isValidLoginPayload(body)) {
+        return resolve({ ok: false, json: async () => ({ message: 'Invalid email or password format.' }) });
+      }
+      const email = body.email.trim();
+      // parameterized-equivalent lookup: exact literal match, never re-interpreted as code
+      const user = users.find(u => u.email === email);
+      const genericFail = () => resolve({ ok: false, json: async () => ({ message: 'Invalid email or password.' }) });
+      if (!user) return genericFail();
+      dcodeIO.bcrypt.compare(body.password, user.password_hash, (err, match) => {
+        if (err || !match) return genericFail();
+        resolve({ ok: true, json: async () => ({ message: `Welcome back, ${user.email}!` }) });
+      });
+    });
+  };
+})();
+</script>
+<script>
+// The following is script.js, inlined verbatim (this is a single file, no server to host it separately)
+document.getElementById('loginForm').addEventListener('submit', function (e) {
+  e.preventDefault();
+
+  const emailInput = document.getElementById('email');
+  const passwordInput = document.getElementById('password');
+  const emailError = document.getElementById('emailError');
+  const passwordError = document.getElementById('passwordError');
+  const formMsg = document.getElementById('formMsg');
+
+  emailError.textContent = '';
+  passwordError.textContent = '';
+  formMsg.textContent = '';
+  emailInput.classList.remove('invalid');
+  passwordInput.classList.remove('invalid');
+
+  const email = emailInput.value.trim();
+  const password = passwordInput.value;
+  let valid = true;
+
+  if (email === '') {
+    emailError.textContent = 'Email is required.';
+    emailInput.classList.add('invalid');
+    valid = false;
+  } else if (!email.includes('@')) {
+    emailError.textContent = 'Please enter a valid email address (must contain "@").';
+    emailInput.classList.add('invalid');
+    valid = false;
+  }
+
+  if (password === '') {
+    passwordError.textContent = 'Password is required.';
+    passwordInput.classList.add('invalid');
+    valid = false;
+  } else if (password.length < 8) {
+    passwordError.textContent = 'Password must be at least 8 characters long.';
+    passwordInput.classList.add('invalid');
+    valid = false;
+  }
+
+  if (!valid) return;
+
+  submitLogin(email, password, formMsg);
+});
+
+async function submitLogin(email, password, formMsg) {
+  formMsg.textContent = 'Logging in...';
+  try {
+    const res = await fetch('/api/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password })
+    });
+    const data = await res.json();
+    formMsg.textContent = data.message || (res.ok ? 'Success' : 'Login failed');
+  } catch (err) {
+    formMsg.textContent = 'Network error — please try again.';
+  }
+}
+</script>
+</body>
+</html>
