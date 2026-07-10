@@ -147,3 +147,146 @@ async function submitLogin(email, password, formMsg) {
 </script>
 </body>
 </html>
+
+
+
+#vulnerable demo code
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>VULNERABLE Login Demo - for exploit practice only</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+  body { font-family: Arial, sans-serif; background:#fff3f0; display:flex; flex-direction:column; justify-content:center; align-items:center; min-height:100vh; margin:0; padding:20px; box-sizing:border-box; }
+  .login-box { background:#fff; padding:32px; border-radius:8px; box-shadow:0 2px 10px rgba(0,0,0,0.15); width:340px; border:2px solid #d32f2f; }
+  h1 { font-size:18px; text-align:center; color:#d32f2f; margin-top:0; }
+  label { display:block; margin-top:14px; font-size:13px; color:#444; }
+  input { width:100%; padding:8px; margin-top:4px; box-sizing:border-box; border:1px solid #ccc; border-radius:4px; font-family:monospace; }
+  button { width:100%; margin-top:20px; padding:10px; background:#d32f2f; color:#fff; border:none; border-radius:4px; cursor:pointer; font-size:14px; }
+  button:hover { background:#b71c1c; }
+  #formMsg { text-align:center; font-size:13px; margin-top:12px; min-height:16px; font-weight:bold; }
+  .query { font-family:monospace; font-size:11px; background:#f5f5f5; border-radius:4px; padding:8px; margin-top:12px; word-break:break-all; color:#555; border:1px solid #ddd; }
+  .note { max-width:340px; font-size:12px; color:#666; margin-top:16px; line-height:1.5; }
+  .presets { display:flex; gap:6px; margin-top:10px; flex-wrap:wrap; }
+  .presets button { width:auto; margin-top:0; padding:5px 8px; font-size:11px; background:#eee; color:#333; }
+  .presets button:hover { background:#ddd; }
+</style>
+</head>
+<body>
+  <div class="login-box">
+    <h1>&#9888; Vulnerable login (practice target)</h1>
+    <form id="loginForm" novalidate>
+      <label for="email">Email</label>
+      <input type="text" id="email" name="email" autocomplete="off">
+
+      <label for="password">Password</label>
+      <input type="text" id="password" name="password" autocomplete="off">
+
+      <div class="presets">
+        <button type="button" onclick="preset('normal')">Normal login</button>
+        <button type="button" onclick="preset('p1')">Comment payload</button>
+        <button type="button" onclick="preset('p2')">OR tautology</button>
+      </div>
+
+      <button type="submit">Log in</button>
+      <div id="formMsg"></div>
+      <div class="query" id="queryBox"></div>
+    </form>
+  </div>
+
+  <div class="note">
+    This intentionally reproduces <code>vulnerable-server.js</code>'s bug (string-concatenated SQL) as a
+    client-side mock so you can practice the exploit without running Node. It builds the exact query string
+    a real backend would send, then parses that string the way a real SQL engine would &mdash; respecting
+    quotes, <code>AND</code>/<code>OR</code> precedence, and <code>--</code> comments &mdash; so injected
+    input genuinely changes query logic, same as the real terminal test.
+  </div>
+
+<script>
+const users = [
+  { email: 'demo@juice-shop-assignment.test', password: 'CorrectHorse123', admin: false },
+  { email: 'admin@juice-shop-assignment.test', password: 'S3cretAdminPass!', admin: true }
+];
+
+const presets = {
+  normal: { e: 'demo@juice-shop-assignment.test', p: 'CorrectHorse123' },
+  p1: { e: "admin@juice-shop-assignment.test' -- ", p: 'anything' },
+  p2: { e: "x' OR '1'='1' -- ", p: 'irrelevant' }
+};
+
+function preset(key) {
+  document.getElementById('email').value = presets[key].e;
+  document.getElementById('password').value = presets[key].p;
+}
+
+function tokenizeClause(clause) {
+  let tokens = [], buf = '', inQuote = false, i = 0;
+  while (i < clause.length) {
+    const c = clause[i];
+    if (c === "'") { inQuote = !inQuote; buf += c; i++; continue; }
+    if (!inQuote && clause.substr(i, 4).toUpperCase() === ' OR ') {
+      tokens.push({ type: 'COND', text: buf.trim() }); tokens.push({ type: 'OR' });
+      buf = ''; i += 4; continue;
+    }
+    if (!inQuote && clause.substr(i, 5).toUpperCase() === ' AND ') {
+      tokens.push({ type: 'COND', text: buf.trim() }); tokens.push({ type: 'AND' });
+      buf = ''; i += 5; continue;
+    }
+    buf += c; i++;
+  }
+  if (buf.trim()) tokens.push({ type: 'COND', text: buf.trim() });
+  return tokens;
+}
+
+function evalCond(text, row) {
+  const m = text.match(/^(.+?)\s*=\s*(.+)$/);
+  if (!m) return false;
+  function val(op) {
+    op = op.trim();
+    if (op.startsWith("'") && op.endsWith("'")) return op.slice(1, -1);
+    if (op === 'email') return row.email;
+    if (op === 'password') return row.password;
+    return op;
+  }
+  return val(m[1]) === val(m[2]);
+}
+
+function evalClause(clause, row) {
+  const toks = tokenizeClause(clause);
+  const orGroups = [[]];
+  for (const t of toks) {
+    if (t.type === 'OR') orGroups.push([]);
+    else orGroups[orGroups.length - 1].push(t);
+  }
+  return orGroups.some(g => g.filter(t => t.type === 'COND').every(c => evalCond(c.text, row)));
+}
+
+document.getElementById('loginForm').addEventListener('submit', function (e) {
+  e.preventDefault();
+  const email = document.getElementById('email').value;
+  const password = document.getElementById('password').value;
+
+  // This mirrors vulnerable-server.js exactly: raw string concatenation into SQL.
+  const query = `SELECT * FROM users WHERE email = '${email}' AND password = '${password}'`;
+  document.getElementById('queryBox').textContent = query;
+
+  let clause = query.split('WHERE')[1];
+  const commentIdx = clause.indexOf('--');
+  if (commentIdx !== -1) clause = clause.slice(0, commentIdx);
+
+  const match = users.find(u => evalClause(clause, u));
+  const msg = document.getElementById('formMsg');
+  if (match) {
+    msg.style.color = '#d32f2f';
+    msg.textContent = match.admin
+      ? `Bypassed — logged in as ADMIN (${match.email})`
+      : `Bypassed — logged in as ${match.email}`;
+  } else {
+    msg.style.color = '#555';
+    msg.textContent = 'Invalid email or password.';
+  }
+});
+</script>
+</body>
+</html>
